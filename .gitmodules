@@ -1,0 +1,3 @@
+[submodule "vendor/utest"]
+	path = vendor/utest
+	url = https://github.com/sheredom/utest.h
