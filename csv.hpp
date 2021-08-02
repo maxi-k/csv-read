@@ -1,65 +1,26 @@
 #pragma once
 
-
-#include <sys/mman.h>
-#include <fcntl.h>
-#include <unistd.h>
 #include <x86intrin.h>
 
 #include <string>
 #include <vector>
 #include <thread>
 
-namespace csv {
+#include "util.hpp"
+
+namespace io::csv {
 
     struct CharIter {
         const char* iter;
         const char* limit;
+
+        template<typename T>
+        static CharIter from_iterable(const T& iter) {
+            return CharIter{iter.begin(), iter.end()};
+        }
     };
 
     namespace {
-
-        class MMapping {
-            int handle;
-            uintptr_t size;
-            char* mapping;
-
-            public:
-                MMapping() : handle(-1), size(0), mapping(nullptr) {}
-                MMapping(const std::string &filename)
-                    : MMapping() { open(filename.data()); }
-                ~MMapping() { close(); }
-
-                inline bool open(const char* file) {
-                    close();
-                    int h = ::open(file, O_RDONLY); // XXX O_DIRECT
-                    if (h < 0) { return false; } ;
-
-                    lseek(h, 0, SEEK_END);
-                    size = lseek(h, 0, SEEK_CUR);
-
-                    auto m = mmap(nullptr, size, PROT_READ, MAP_SHARED, h, 0); // MAP_ANONYMOUS
-                    if (m == MAP_FAILED) {
-                        ::close(h);
-                        return false;
-                    }
-
-                    handle = h;
-                    mapping = static_cast<char*>(m);
-                    return true;
-                }
-
-                inline void close() {
-                    if (handle >= 0) {
-                        ::munmap(mapping, size);
-                        ::close(handle);
-                        handle = -1;
-                    }
-                }
-
-                inline const char* begin() const { return mapping; }
-                inline const char* end() const { return mapping + size; }
-        };
 
         template<char delim>
         inline void find(CharIter& pos) {
@@ -163,5 +124,14 @@ namespace csv {
         if (pos.iter < pos.limit && *pos.iter != eol) { find<eol>(pos); }
         pos.iter += pos.iter != pos.limit;
         return true;
+    }
+
+    template<char delim = ',', char eol = '\n', typename Consumer>
+    inline std::size_t read_file(const char* filename, std::initializer_list<unsigned> cols, const Consumer& consumer) {
+       MMapping<char> input(filename);
+       auto pos = CharIter::from_iterable(input);
+       std::size_t lines{0};
+       while (read_line<delim, eol, Consumer>(pos, cols, consumer)) { ++lines; }
+       return lines;
     }
 }
