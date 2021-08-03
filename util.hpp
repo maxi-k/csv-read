@@ -13,33 +13,42 @@ namespace io {
 template<typename T = char>
 struct MMapping {
    int handle;
-   uintptr_t size;
+   uintptr_t file_size;
    T* mapping;
 
    using iterator = T*;
 
    public:
-   MMapping() : handle(-1), size(0), mapping(nullptr) {}
-   MMapping(const std::string& filename, int flags = 0) : MMapping() { open(filename.data(), flags); }
+   MMapping() : handle(-1), file_size(0), mapping(nullptr) {}
+   MMapping(const std::string& filename, int flags = 0, uintptr_t size = 0) : MMapping() { open(filename.data(), flags, size); }
    ~MMapping() { close(); }
 
-   inline void open(const char* file, int flags) {
+   inline void open(const char* file, int flags, std::size_t size) {
       close();
-      int h = ::open(file, O_RDONLY | flags);
+      int h = ::open(file, O_RDWR | flags, 0655);
       if (h < 0) {
          auto err = errno;
-         throw std::logic_error("Cloud not open file " +
+         throw std::logic_error("Cloud not open file: " +
                                 std::string(strerror(err)));
       }
 
-      lseek(h, 0, SEEK_END);
-      size = lseek(h, 0, SEEK_CUR);
+      if (size == 0) {
+         lseek(h, 0, SEEK_END);
+         file_size = lseek(h, 0, SEEK_CUR);
+      } else {
+         auto res = ::ftruncate(h, size);
+         if (res < 0) {
+            auto err = errno;
+            throw std::logic_error("Could not resize file: " + std::string(strerror(err)));
+         }
+         file_size = size;
+      }
 
-      auto m = mmap(nullptr, size, PROT_READ, MAP_SHARED, h, 0);
+      auto m = mmap(nullptr, file_size, PROT_READ | PROT_WRITE, MAP_SHARED, h, 0);
       if (m == MAP_FAILED) {
          auto err = errno;
          ::close(h);
-         throw std::logic_error("Cloud not mmap file " +
+         throw std::logic_error("Cloud not mmap file: " +
                                 std::string(strerror(err)));
       }
 
@@ -49,29 +58,41 @@ struct MMapping {
 
    inline void close() {
       if (handle >= 0) {
-         ::munmap(mapping, size);
+         ::munmap(mapping, file_size);
          ::close(handle);
          handle = -1;
          mapping = nullptr;
       }
    }
 
+   inline void flush() const {
+      if (handle) { ::fdatasync(handle); }
+   }
+
    inline T* data() const { return mapping; }
    inline const iterator begin() const { return data(); }
-   inline const iterator end() const { return static_cast<char*>(data()) + this->size; }
+   inline const iterator end() const { return data() + (this->file_size / sizeof(T)); }
+};
+
+struct fixed_size {
+   static constexpr bool IS_VARIABLE = false;
 };
 
 template <typename T>
 struct DataColumn : MMapping<T> {
+   using size_tag = fixed_size;
    using iterator = T*;
    using value_type = T;
 
+   static constexpr uintptr_t GLOBAL_OVERHEAD = 0;
+   static constexpr uintptr_t PER_ITEM_OVERHEAD = 0;
+
    uintptr_t count = 0ul;
 
-   DataColumn(const char* filename, int flags = 0)
-       : MMapping<T>(filename, flags)
-       , count(this->size / sizeof(T)) {
-       assert(this->size % sizeof(T) == 0);
+   DataColumn(const char* filename, int flags = 0, uintptr_t size = 0)
+       : MMapping<T>(filename, flags, size)
+       , count(this->file_size / sizeof(T)) {
+       assert(this->file_size % sizeof(T) == 0);
 
    }
 
@@ -79,7 +100,8 @@ struct DataColumn : MMapping<T> {
    const T& operator[](std::size_t idx) const { return this->data()[idx]; }
 };
 
-namespace variable_size {
+struct variable_size {
+   static constexpr bool IS_VARIABLE = true;
    struct StringIndexSlot {
       uint64_t size;
       uint64_t offset;
@@ -89,12 +111,15 @@ namespace variable_size {
       uint64_t count;
       StringIndexSlot slot[];
    };
-}
+};
 
 template <>
 struct DataColumn<std::string_view> : MMapping<variable_size::StringData> {
-   using Data = variable_size::StringData;
+   using size_tag = variable_size;
+   using Data = typename variable_size::StringData;
    using value_type = std::string_view;
+   static constexpr uintptr_t PER_ITEM_OVERHEAD = sizeof(variable_size::StringIndexSlot);
+   static constexpr uintptr_t GLOBAL_OVERHEAD = sizeof(uint64_t);
 
    struct iterator {
       uint64_t idx;
@@ -122,14 +147,18 @@ struct DataColumn<std::string_view> : MMapping<variable_size::StringData> {
       }
    };
 
-   DataColumn(const char* filename, int flags = 0)
-       : MMapping<Data>(filename, flags) {}
+   DataColumn(const char* filename, int flags = 0, uintptr_t size = 0)
+       : MMapping<Data>(filename, flags, size) {}
 
    Data* data() const { return this->mapping; }
    uintptr_t size() const { return data()->count; }
 
    inline const iterator begin() const { return iterator{0, data()}; }
    inline const iterator end() const { return iterator{data()->count, data()}; }
+
+   inline variable_size::StringIndexSlot& slot_at(std::size_t idx) const {
+     return data()->slot[idx];
+   }
 
    inline std::string_view operator[](std::size_t idx) const {
       auto slot = data()->slot[idx];

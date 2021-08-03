@@ -122,8 +122,70 @@ namespace io::csv {
 
     } // namsepace
 
+    template<typename T>
+    struct Parser {
+        template<char delim, char eol = '\n'>
+        T parse_value(CharIter& pos) ;
+    };
+
+    template<>
+    struct Parser<unsigned long> {
+       static constexpr char TYPE_NAME[] = "long.unsigned";
+       template <char delim, char eol = '\n'>
+       inline unsigned long parse_value(CharIter& pos) {
+          return parse_unsigned<delim, eol>(pos);
+       }
+    };
+
+    template<>
+    struct Parser<unsigned> {
+       static constexpr char TYPE_NAME[] = "int.unsigned";
+       template <char delim, char eol = '\n'>
+       inline unsigned parse_value(CharIter& pos) {
+          return parse_unsigned<delim, eol>(pos);
+       }
+    };
+
+    template<>
+    struct Parser<long> {
+       static constexpr char TYPE_NAME[] = "long";
+       template <char delim, char eol = '\n'>
+       inline long parse_value(CharIter& pos) {
+          return parse_int<delim, eol>(pos);
+       }
+    };
+
+    template<>
+    struct Parser<int> {
+       static constexpr char TYPE_NAME[] = "int";
+       template <char delim, char eol = '\n'>
+       inline int parse_value(CharIter& pos) {
+          return parse_int<delim, eol>(pos);
+       }
+    };
+
+    template<>
+    struct Parser<double> {
+       static constexpr char TYPE_NAME[] = "double";
+       template <char delim, char eol = '\n'>
+       inline double parse_value(CharIter& pos) {
+          return parse_double<delim, eol>(pos);
+       }
+    };
+
+    template<>
+    struct Parser<std::string_view> {
+       static constexpr char TYPE_NAME[] = "string";
+       template <char delim, char eol = '\n'>
+       inline std::string_view parse_value(CharIter& pos) {
+           auto start = pos.iter;
+           find<delim>(pos);
+           return std::string_view(start, pos.iter - start);
+       }
+    };
+
     template<char delim = ',', char eol = '\n', typename Consumer>
-    inline bool read_line(CharIter& pos, std::initializer_list<unsigned> cols, const Consumer& consumer) {
+    inline bool read_line(CharIter& pos, const std::vector<unsigned>& cols, const Consumer& consumer) {
         unsigned skipped = 0;
         for (auto col : cols) {
             auto n = col - skipped;
@@ -148,8 +210,16 @@ namespace io::csv {
     }
 
     template<char delim = ',', char eol = '\n', typename Consumer>
-    inline std::size_t read_file(const char* filename, std::initializer_list<unsigned> cols, const Consumer& consumer) {
+    inline std::size_t read_file(const char* filename, const std::vector<unsigned>& cols, const Consumer& consumer) {
        MMapping<char> input(filename);
+       auto pos = CharIter::from_iterable(input);
+       std::size_t lines{0};
+       while (read_line<delim, eol, Consumer>(pos, cols, consumer)) { ++lines; }
+       return lines;
+    }
+
+    template<char delim = ',', char eol = '\n', typename Consumer>
+    inline std::size_t read_file(const MMapping<char>& input, const std::vector<unsigned>& cols, const Consumer& consumer) {
        auto pos = CharIter::from_iterable(input);
        std::size_t lines{0};
        while (read_line<delim, eol, Consumer>(pos, cols, consumer)) { ++lines; }
