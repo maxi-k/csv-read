@@ -2,6 +2,7 @@
 
 #include <x86intrin.h>
 
+#include <cassert>
 #include <string>
 #include <vector>
 #include <thread>
@@ -73,16 +74,36 @@ namespace io::csv {
             iter -= iter != limit;
         }
 
-        template<char delim>
-        inline size_t parse_int(CharIter& pos) {
+        template<char delim, char eol = '\n'>
+        inline size_t parse_unsigned(CharIter& pos) {
             auto&& [iter, limit] = pos;
             size_t v = *iter++ - '0';
             for (;iter != limit; ++iter) {
                 char c = *iter;
-                if (c == '|') break;
+                if (c == delim || c == eol) break;
                 v = 10 * v + c - '0';
             }
             return v;
+        }
+
+        template<char delim, char eol = '\n', int base = 10>
+        inline long parse_int(CharIter& pos) {
+            auto start = pos.iter;
+            char* end = nullptr;
+            auto result = std::strtol(start, &end, base);
+            assert(end != nullptr && (*end == delim || *end == eol));
+            pos.iter = end;
+            return result;
+        }
+
+        template<char delim, char eol = '\n'>
+        inline double parse_double(CharIter& pos) {
+            auto start = pos.iter;
+            char* end = nullptr;
+            auto result = std::strtod(start, &end);
+            assert(end != nullptr && (*end == delim || *end == eol));
+            pos.iter = end;
+            return result;
         }
 
         template <typename Executor>
