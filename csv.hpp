@@ -129,6 +129,15 @@ namespace io::csv {
     };
 
     template<>
+    struct Parser<char> {
+       static constexpr char TYPE_NAME[] = "char";
+       template <char delim, char eol = '\n'>
+       inline int parse_value(CharIter& pos) {
+          return *(pos.iter++);
+       }
+    };
+
+    template<>
     struct Parser<unsigned long> {
        static constexpr char TYPE_NAME[] = "long.unsigned";
        template <char delim, char eol = '\n'>
