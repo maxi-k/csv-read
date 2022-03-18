@@ -28,7 +28,7 @@ struct MMapping {
       int h = ::open(file, O_RDWR | flags, 0655);
       if (h < 0) {
          auto err = errno;
-         throw std::logic_error("Cloud not open file: " +
+         throw std::logic_error("Coud not open file " + std::string(file) + ":" +
                                 std::string(strerror(err)));
       }
 
