@@ -43,6 +43,27 @@ namespace io::csv {
             }
         }
 
+        template<char delim1, char delim2>
+        inline void find_either(CharIter& pos) {
+            auto&& [iter, limit] = pos;
+            const __m256i search_mask1 = _mm256_set1_epi8(delim1);
+            const __m256i search_mask2 = _mm256_set1_epi8(delim2);
+            auto limit32 = limit - 32;
+            while (iter < limit32) {
+                auto block = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(iter));
+                uint32_t matches = _mm256_movemask_epi8(_mm256_cmpeq_epi8(block, search_mask1))
+                                 | _mm256_movemask_epi8(_mm256_cmpeq_epi8(block, search_mask2));
+                if (matches) {
+                    iter += __builtin_ctz(matches);
+                    return;
+                }
+                iter += 32;
+            }
+            while ((iter != limit) && ((*iter) != delim1) && ((*iter) != delim2)) {
+                ++iter;
+            }
+        }
+
         template<char delim>
         inline void find_nth(CharIter& pos, unsigned n) {
             auto&& [iter, limit] = pos;
@@ -84,6 +105,16 @@ namespace io::csv {
                 v = 10 * v + c - '0';
             }
             return v;
+        }
+
+        template<typename F, char delim, char eol = '\n'>
+        inline auto parse_from_to(F fn, CharIter& pos) {
+            auto start = pos.iter;
+            char* end = nullptr;
+            auto result = fn(start, &end);
+            assert(end != nullptr && (*end == delim || *end == eol));
+            pos.iter = end;
+            return result;
         }
 
         template<char delim, char eol = '\n', int base = 10>
@@ -188,7 +219,7 @@ namespace io::csv {
        template <char delim, char eol = '\n'>
        inline std::string_view parse_value(CharIter& pos) {
            auto start = pos.iter;
-           find<delim>(pos);
+           find_either<delim, eol>(pos);
            return std::string_view(start, pos.iter - start);
        }
     };
@@ -211,7 +242,7 @@ namespace io::csv {
             pos.iter += *pos.iter == delim;
             consumer(col, pos);
             skipped = col + 1;
-            ++pos.iter;
+            pos.iter += pos.iter < pos.limit && *pos.iter != eol;
         }
         if (pos.iter < pos.limit && *pos.iter != eol) { find<eol>(pos); }
         pos.iter += pos.iter != pos.limit;

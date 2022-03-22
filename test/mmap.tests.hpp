@@ -10,7 +10,7 @@ UTEST(MMap, MapsFiles) {
 
     ASSERT_NE(-1, map.handle);
     ASSERT_NE(nullptr, map.data());
-    ASSERT_EQ(512u, map.size);
+    ASSERT_EQ(512u, map.file_size);
     ASSERT_EQ(0, *map.data());
 
     map.~MMapping();
