@@ -117,3 +117,30 @@ UTEST(ReadFile, ReadsInputFile2) {
     ASSERT_EQ(43u, lines);
     ASSERT_EQ(3 * 43u, called);
 }
+
+UTEST(ReadFile, ReadsInputFile3) {
+    char filename[] = "test/data/csv-testfile3.csv";
+    auto called = 0u, endcols = 0u;
+    auto lines = read_file<','>(filename, {0, 5, 13}, [&](unsigned column, CharIter& at) {
+      if (column == 0 && called != 0) {
+          Parser<unsigned> p;
+          unsigned v = p.parse_value<',', '\n'>(at);
+          ASSERT_EQ(1u, v);
+      }
+      else if (column == 13) {
+          ++endcols;
+         Parser<std::string_view> p;
+         std::string_view v = p.parse_value<',', '\n'>(at);
+         std::array<char, 20> dest; dest.fill('\0');
+         v.copy(dest.data(), v.size());
+         ASSERT_STREQ("somestrln", dest.data());
+      } else {
+          find_either<',', '\n'>(at);
+      }
+      ++called;
+    });
+
+    ASSERT_EQ(43u, endcols);
+    ASSERT_EQ(43u, lines);
+    ASSERT_EQ(3 * 43u, called);
+}
