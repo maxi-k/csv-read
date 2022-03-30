@@ -21,30 +21,35 @@ struct MMapping {
    public:
    MMapping() : handle(-1), file_size(0), mapping(nullptr) {}
    MMapping(const std::string& filename, int flags = 0, uintptr_t size = 0) : MMapping() { open(filename.data(), flags, size); }
+   MMapping(uintptr_t size, int flags = 0) : MMapping() { open(nullptr, flags, size); }
    ~MMapping() { close(); }
 
    inline void open(const char* file, int flags, std::size_t size) {
       close();
-      int h = ::open(file, O_RDWR | flags, 0655);
-      if (h < 0) {
-         auto err = errno;
-         throw std::logic_error("Coud not open file " + std::string(file) + ":" +
-                                std::string(strerror(err)));
-      }
-
-      if (size == 0) {
-         lseek(h, 0, SEEK_END);
-         file_size = lseek(h, 0, SEEK_CUR);
-      } else {
-         auto res = ::ftruncate(h, size);
-         if (res < 0) {
+      int h = -1;
+      if (file) {
+         h = ::open(file, O_RDWR | flags, 0655);
+         if (h < 0) {
             auto err = errno;
-            throw std::logic_error("Could not resize file: " + std::string(strerror(err)));
+            throw std::logic_error("Coud not open file " + std::string(file) +
+                                   ":" + std::string(strerror(err)));
          }
-         file_size = size;
-      }
 
-      auto m = mmap(nullptr, file_size, PROT_READ | PROT_WRITE, MAP_SHARED, h, 0);
+         if (size == 0) {
+            lseek(h, 0, SEEK_END);
+            size = lseek(h, 0, SEEK_CUR);
+         } else {
+            auto res = ::ftruncate(h, size);
+            if (res < 0) {
+               auto err = errno;
+               throw std::logic_error("Could not resize file: " +
+                                      std::string(strerror(err)));
+            }
+         }
+      }
+      file_size = size;
+
+      auto m = mmap(nullptr, file_size, PROT_READ | PROT_WRITE, h == -1 ? MAP_PRIVATE | MAP_ANONYMOUS : MAP_SHARED, h, 0);
       if (m == MAP_FAILED) {
          auto err = errno;
          ::close(h);
@@ -57,16 +62,18 @@ struct MMapping {
    }
 
    inline void close() {
-      if (handle >= 0) {
+      if (mapping) {
          ::munmap(mapping, file_size);
+         mapping = nullptr;
+      }
+      if (handle >= 0) {
          ::close(handle);
          handle = -1;
-         mapping = nullptr;
       }
    }
 
    inline void flush() const {
-      if (handle) { ::fdatasync(handle); }
+      if (handle >= 0) { ::fdatasync(handle); }
    }
 
    inline T* data() const { return mapping; }
