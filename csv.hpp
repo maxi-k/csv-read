@@ -163,7 +163,7 @@ namespace io::csv {
     struct Parser<char> {
        static constexpr char TYPE_NAME[] = "char";
        template <char delim, char eol = '\n'>
-       inline int parse_value(CharIter& pos) {
+       inline char parse_value(CharIter& pos) {
           return *(pos.iter++);
        }
     };
