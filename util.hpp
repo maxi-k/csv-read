@@ -76,9 +76,9 @@ struct MMapping {
       if (handle >= 0) { ::fdatasync(handle); }
    }
 
-   inline T* data() const { return mapping; }
-   inline const iterator begin() const { return data(); }
-   inline const iterator end() const { return data() + (this->file_size / sizeof(T)); }
+   [[nodiscard]] inline T* data() const { return mapping; }
+   [[nodiscard]] inline iterator begin() const { return data(); }
+   [[nodiscard]] inline iterator end() const { return data() + (this->file_size / sizeof(T)); }
 };
 
 struct fixed_size {
